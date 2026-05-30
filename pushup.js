@@ -22,12 +22,18 @@ const getJobId = t =>
 
 const parseExtra = t => ({
   players: Math.min(
-    Math.max(+t.match(/(\d{1,2})\s*p/i)?.[1] || 1,1),
+    Math.max(
+      +t.match(/(\d{1,2})\s*p/i)?.[1] || 1,
+      1
+    ),
     12
   ),
 
   sea: Math.min(
-    Math.max(+t.match(/sea\s*(\d)/i)?.[1] || 1,1),
+    Math.max(
+      +t.match(/sea\s*(\d)/i)?.[1] || 1,
+      1
+    ),
     3
   )
 })
@@ -38,38 +44,91 @@ async function login(){
 
   const x = axios.create({
     headers: {
-      "User-Agent": "Mozilla/5.0"
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125 Safari/537.36"
     }
   })
 
-  const fp = await x.get(
-    "https://discord.com/api/v9/experiments"
-  )
+  let fingerprint = null
 
-  const fingerprint = fp.data.fingerprint
+  try{
 
-  const r = await x.post(
-    "https://discord.com/api/v9/auth/login",
-    {
-      login: EMAIL,
-      password: PASSWORD
-    },
-    {
-      headers: {
-        "X-Fingerprint": fingerprint,
-        "Content-Type": "application/json"
-      }
-    }
-  )
+    const fp = await x.get(
+      "https://discord.com/api/v9/experiments"
+    )
 
-  if(!r.data.token){
-    throw new Error("login fail")
+    fingerprint = fp.data.fingerprint
+
+    console.log("fingerprint ok")
+
+  }catch(e){
+
+    console.log("fingerprint fail")
+    console.log(e.message)
+
   }
 
-  console.log("logged in")
-  console.log(r.data.user.username)
+  try{
 
-  return r.data.token
+    const r = await x.post(
+      "https://discord.com/api/v9/auth/login",
+      {
+        login: EMAIL,
+        password: PASSWORD,
+        undelete: false,
+        captcha_key: null,
+        login_source: null,
+        gift_code_sku_id: null
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          ...(fingerprint
+            ? { "X-Fingerprint": fingerprint }
+            : {})
+        }
+      }
+    )
+
+    if(!r.data.token){
+
+      console.log(r.data)
+
+      throw new Error("login fail no token")
+
+    }
+
+    console.log("logged in")
+    console.log("user:", r.data.user?.username)
+
+    return r.data.token
+
+  }catch(e){
+
+    console.log("LOGIN FAIL")
+
+    if(e.response){
+
+      console.log("status:", e.response.status)
+
+      try{
+        console.log(
+          JSON.stringify(e.response.data, null, 2)
+        )
+      }catch{
+        console.log("cannot print response")
+      }
+
+    }else{
+
+      console.log(e.message)
+
+    }
+
+    throw e
+
+  }
+
 }
 
 function start(token){
@@ -85,14 +144,26 @@ function start(token){
       "wss://gateway.discord.gg/?v=10&encoding=json"
     )
 
+    ws.on("open", () => {
+
+      console.log("gateway open")
+
+    })
+
     ws.on("message", async raw => {
 
       let data
 
       try{
-        data = JSON.parse(raw)
+
+        data = JSON.parse(raw.toString())
+
       }catch{
+
+        console.log("json parse fail")
+
         return
+
       }
 
       if(data.op === 10){
@@ -103,11 +174,17 @@ function start(token){
           op: 2,
           d: {
             token,
-            intents: 3276799,
+            intents: 33281,
             properties: {
               os: "Windows",
               browser: "Chrome",
               device: ""
+            },
+            presence: {
+              status: "online",
+              since: 0,
+              activities: [],
+              afk: false
             }
           }
         }))
@@ -121,16 +198,27 @@ function start(token){
               d: null
             }))
 
+            console.log("heartbeat sent")
+
           }
 
         }, data.d.heartbeat_interval)
 
         return
+
+      }
+
+      if(data.op === 11){
+
+        console.log("heartbeat ack")
+
       }
 
       if(data.t === "READY"){
+
         console.log("READY")
-        console.log(data.d.user.username)
+        console.log("logged:", data.d.user.username)
+
       }
 
       if(data.t !== "MESSAGE_CREATE") return
@@ -147,30 +235,58 @@ function start(token){
           ].join("\n")
         ).join("\n")
 
-      console.log("MESSAGE")
+      console.log("================================")
+      console.log("MESSAGE EVENT")
+      console.log("channel:", m.channel_id)
+      console.log("text:")
       console.log(text)
+      console.log("================================")
 
       const boss = channels[m.channel_id]
 
-      if(!boss) return
+      if(!boss){
+
+        console.log("wrong channel")
+
+        return
+
+      }
+
+      if(!text){
+
+        console.log("empty text")
+
+        return
+
+      }
 
       const job = getJobId(text)
 
+      console.log("job:", job)
+
       if(!job){
-        console.log("no job")
+
+        console.log("job not found")
+
         return
+
       }
 
       if(pushed.has(job)){
+
         console.log("duplicate")
+
         return
+
       }
 
-      pushed.set(job,1)
+      pushed.set(job, 1)
 
       setTimeout(() => {
+
         pushed.delete(job)
-      },30000)
+
+      }, 30000)
 
       const { players, sea } = parseExtra(text)
 
@@ -182,11 +298,21 @@ function start(token){
         sea
       }
 
+      console.log("payload:")
       console.log(payload)
 
       try{
 
-        const r = await axios.post(API,payload)
+        const r = await axios.post(
+          API,
+          payload,
+          {
+            timeout: 10000,
+            headers: {
+              "Content-Type": "application/json"
+            }
+          }
+        )
 
         console.log("PUSH OK")
         console.log(r.data)
@@ -196,38 +322,69 @@ function start(token){
         console.log("PUSH FAIL")
 
         if(e.response){
-          console.log(e.response.status)
-          console.log(e.response.data)
+
+          console.log("status:", e.response.status)
+
+          try{
+
+            console.log(
+              JSON.stringify(
+                e.response.data,
+                null,
+                2
+              )
+            )
+
+          }catch{
+
+            console.log("cannot print response")
+
+          }
+
         }else{
+
           console.log(e.message)
+
         }
 
       }
 
     })
 
-    ws.on("close", () => {
+    ws.on("close", c => {
 
-      console.log("gateway close")
+      console.log("gateway close:", c)
 
       clearInterval(hb)
 
-      setTimeout(connect,5000)
+      setTimeout(connect, 5000)
 
     })
 
     ws.on("error", e => {
+
+      console.log("gateway error")
       console.log(e.message)
+
     })
 
   }
 
   connect()
+
 }
 
 ;(async()=>{
 
   try{
+
+    if(!EMAIL || !PASSWORD){
+
+      console.log("missing EMAIL or PASSWORD")
+
+      return
+
+    }
 
     const token = await login()
 
@@ -235,7 +392,7 @@ function start(token){
 
   }catch(e){
 
-    console.log("FATAL")
+    console.log("FATAL ERROR")
     console.log(e.message)
 
   }
@@ -246,7 +403,7 @@ http.createServer((req,res)=>{
 
   res.end("ok")
 
-}).listen(process.env.PORT || 3000,()=>{
+}).listen(process.env.PORT || 3000, ()=>{
 
   console.log("HTTP READY")
 

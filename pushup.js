@@ -1,5 +1,6 @@
 const WebSocket = require("ws")
 const axios = require("axios")
+const http = require("http")
 
 const TOKEN = process.env.DISCORD_TOKEN
 
@@ -21,15 +22,15 @@ const parseExtra = t => {
 
   let players =
     +t.match(/(\d{1,2})\s*p/i)?.[1] ||
-    Math.floor(Math.random()*12+1)
+    Math.floor(Math.random() * 12 + 1)
 
   let sea =
     +t.match(/sea\s*(\d)/i)?.[1] ||
-    Math.floor(Math.random()*3+1)
+    Math.floor(Math.random() * 3 + 1)
 
   return {
-    players: Math.min(Math.max(players,1),12),
-    sea: Math.min(Math.max(sea,1),3)
+    players: Math.min(Math.max(players, 1), 12),
+    sea: Math.min(Math.max(sea, 1), 3)
   }
 }
 
@@ -45,6 +46,10 @@ const connect = () => {
     "wss://gateway.discord.gg/?v=10&encoding=json"
   )
 
+  ws.on("open", () => {
+    console.log("ws connected")
+  })
+
   ws.on("message", async raw => {
 
     let data
@@ -57,10 +62,13 @@ const connect = () => {
 
     if(data.op === 10){
 
+      console.log("gateway hello")
+
       ws.send(JSON.stringify({
         op: 2,
         d: {
           token: TOKEN,
+          intents: 513,
           properties: {
             os: "windows",
             browser: "chrome",
@@ -93,15 +101,34 @@ const connect = () => {
 
     const m = data.d
 
+    console.log("message:", m.channel_id)
+    console.log(m.content)
+
     const boss = channels[m.channel_id]
 
-    if(!boss || !m.content) return
+    if(!boss){
+      console.log("wrong channel")
+      return
+    }
+
+    if(!m.content){
+      console.log("empty content")
+      return
+    }
 
     const job = getJobId(m.content)
 
-    if(!job) return
+    console.log("job:", job)
 
-    if(pushed.has(job)) return
+    if(!job){
+      console.log("no job id found")
+      return
+    }
+
+    if(pushed.has(job)){
+      console.log("duplicate job")
+      return
+    }
 
     pushed.set(job, Date.now())
 
@@ -111,21 +138,46 @@ const connect = () => {
 
     const { players, sea } = parseExtra(m.content)
 
-    const payload = { job, boss, players, sea };
+    const payload = {
+      job,
+      boss,
+      players,
+      sea
+    }
 
-await axios.post(API, payload, { timeout: 5000 });
+    console.log("payload:", payload)
 
     try{
 
-      await axios.post(API, payload, {
-        timeout: 5000
+      const res = await axios.post(API, payload, {
+        timeout: 10000,
+        headers: {
+          "Content-Type": "application/json"
+        }
       })
 
-      console.log("push", payload)
+      console.log("push success")
+      console.log(res.data)
 
     }catch(e){
 
-      console.log("push fail", e.message)
+      console.log("push fail")
+
+      if(e.response){
+
+        console.log("status:", e.response.status)
+
+        try{
+          console.log("data:", JSON.stringify(e.response.data))
+        }catch{
+          console.log("cannot stringify response")
+        }
+
+      }else{
+
+        console.log(e.message)
+
+      }
 
     }
 
@@ -139,22 +191,32 @@ await axios.post(API, payload, { timeout: 5000 });
 
     const delay = Math.min(reconnect * 2000, 30000)
 
-    console.log("reconnect", delay)
+    console.log("reconnect in", delay)
 
     setTimeout(connect, delay)
 
   })
 
-  ws.on("error", () => ws.close())
+  ws.on("error", e => {
+
+    console.log("ws error", e.message)
+
+    ws.close()
+
+  })
 
 }
 
 connect()
-const http = require('http')
 
 http.createServer((req, res) => {
+
   res.writeHead(200)
-  res.end('ok')
+
+  res.end("ok")
+
 }).listen(process.env.PORT || 3000, () => {
-  console.log('HTTP READY')
+
+  console.log("HTTP READY")
+
 })

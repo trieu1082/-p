@@ -19,36 +19,37 @@ const pushed = new Map()
 const getJobId = t =>
   t.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0]
 
-const parseExtra = t => {
+const parseExtra = t => ({
+  players: Math.min(
+    Math.max(
+      +t.match(/(\d{1,2})\s*p/i)?.[1] || 1,
+      1
+    ),
+    12
+  ),
 
-  let players =
-    +t.match(/(\d{1,2})\s*p/i)?.[1] ||
-    Math.floor(Math.random() * 12 + 1)
-
-  let sea =
-    +t.match(/sea\s*(\d)/i)?.[1] ||
-    Math.floor(Math.random() * 3 + 1)
-
-  return {
-    players: Math.min(Math.max(players, 1), 12),
-    sea: Math.min(Math.max(sea, 1), 3)
-  }
-}
+  sea: Math.min(
+    Math.max(
+      +t.match(/sea\s*(\d)/i)?.[1] || 1,
+      1
+    ),
+    3
+  )
+})
 
 let ws
 let hb
-let reconnect = 0
 
 const connect = () => {
 
-  clearInterval(hb)
+  console.log("connecting...")
 
   ws = new WebSocket(
     "wss://gateway.discord.gg/?v=10&encoding=json"
   )
 
   ws.on("open", () => {
-    console.log("ws connected")
+    console.log("ws open")
   })
 
   ws.on("message", async raw => {
@@ -56,28 +57,47 @@ const connect = () => {
     let data
 
     try{
-      data = JSON.parse(raw)
-    }catch{
+      data = JSON.parse(raw.toString())
+    }catch(e){
+      console.log("json fail")
       return
     }
 
-    if(data.t){
-      console.log("event:", data.t)
-    }
+    console.log("op:", data.op, "t:", data.t)
 
     if(data.op === 10){
 
-      console.log("gateway hello")
+      console.log("heartbeat:", data.d.heartbeat_interval)
 
       ws.send(JSON.stringify({
         op: 2,
         d: {
           token: TOKEN,
-          intents: 33281,
+          capabilities: 16381,
           properties: {
-            os: "windows",
-            browser: "chrome",
-            device: "pc"
+            os: "Windows",
+            browser: "Chrome",
+            device: "",
+            system_locale: "en-US",
+            browser_user_agent:
+              "Mozilla/5.0",
+            browser_version: "125.0.0.0",
+            os_version: "10",
+            referrer: "",
+            referring_domain: "",
+            release_channel: "stable",
+            client_build_number: 9999,
+            client_event_source: null
+          },
+          presence: {
+            status: "online",
+            since: 0,
+            activities: [],
+            afk: false
+          },
+          compress: false,
+          client_state: {
+            guild_versions: {}
           }
         }
       }))
@@ -91,22 +111,29 @@ const connect = () => {
             d: null
           }))
 
+          console.log("heartbeat sent")
+
         }
 
       }, data.d.heartbeat_interval)
 
-      reconnect = 0
-
-      console.log("gateway ready")
-
       return
+    }
+
+    if(data.op === 11){
+      console.log("heartbeat ack")
+    }
+
+    if(data.t === "READY"){
+      console.log("READY EVENT")
     }
 
     if(data.t !== "MESSAGE_CREATE") return
 
     const m = data.d
 
-    console.log("message:", m.channel_id)
+    console.log("MESSAGE")
+    console.log(m.channel_id)
     console.log(m.content)
 
     const boss = channels[m.channel_id]
@@ -116,26 +143,21 @@ const connect = () => {
       return
     }
 
-    if(!m.content){
-      console.log("empty content")
-      return
-    }
-
-    const job = getJobId(m.content)
+    const job = getJobId(m.content || "")
 
     console.log("job:", job)
 
     if(!job){
-      console.log("no job id found")
+      console.log("no job")
       return
     }
 
     if(pushed.has(job)){
-      console.log("duplicate job")
+      console.log("duplicate")
       return
     }
 
-    pushed.set(job, Date.now())
+    pushed.set(job, 1)
 
     setTimeout(() => {
       pushed.delete(job)
@@ -151,78 +173,46 @@ const connect = () => {
       sea
     }
 
-    console.log("payload:", payload)
+    console.log(payload)
 
     try{
 
-      const res = await axios.post(API, payload, {
-        timeout: 10000,
-        headers: {
-          "Content-Type": "application/json"
-        }
-      })
+      const r = await axios.post(API, payload)
 
-      console.log("push success")
-      console.log(res.data)
+      console.log("PUSH OK")
+      console.log(r.data)
 
     }catch(e){
 
-      console.log("push fail")
+      console.log("PUSH FAIL")
 
       if(e.response){
-
-        console.log("status:", e.response.status)
-
-        try{
-          console.log("data:", JSON.stringify(e.response.data))
-        }catch{
-          console.log("cannot stringify response")
-        }
-
+        console.log(e.response.status)
+        console.log(e.response.data)
       }else{
-
         console.log(e.message)
-
       }
 
     }
 
   })
 
-  ws.on("close", () => {
-
+  ws.on("close", c => {
+    console.log("closed", c)
     clearInterval(hb)
-
-    reconnect++
-
-    const delay = Math.min(reconnect * 2000, 30000)
-
-    console.log("reconnect in", delay)
-
-    setTimeout(connect, delay)
-
+    setTimeout(connect, 5000)
   })
 
   ws.on("error", e => {
-
-    console.log("ws error", e.message)
-
-    ws.close()
-
+    console.log("ws err", e.message)
   })
 
 }
 
 connect()
 
-http.createServer((req, res) => {
-
-  res.writeHead(200)
-
+http.createServer((req,res)=>{
   res.end("ok")
-
-}).listen(process.env.PORT || 3000, () => {
-
+}).listen(process.env.PORT || 3000, ()=>{
   console.log("HTTP READY")
-
 })

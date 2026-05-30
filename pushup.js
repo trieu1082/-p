@@ -58,12 +58,10 @@ const connect = () => {
 
     try{
       data = JSON.parse(raw.toString())
-    }catch(e){
+    }catch{
       console.log("json fail")
       return
     }
-
-    console.log("op:", data.op, "t:", data.t)
 
     if(data.op === 10){
 
@@ -79,8 +77,7 @@ const connect = () => {
             browser: "Chrome",
             device: "",
             system_locale: "en-US",
-            browser_user_agent:
-              "Mozilla/5.0",
+            browser_user_agent: "Mozilla/5.0",
             browser_version: "125.0.0.0",
             os_version: "10",
             referrer: "",
@@ -126,15 +123,26 @@ const connect = () => {
 
     if(data.t === "READY"){
       console.log("READY EVENT")
+      console.log("logged as:", data.d.user.username)
     }
 
     if(data.t !== "MESSAGE_CREATE") return
 
     const m = data.d
 
+    const text =
+      m.content ||
+      (m.embeds || []).map(e =>
+        [
+          e.title || "",
+          e.description || "",
+          ...(e.fields || []).map(f => f.value || "")
+        ].join("\n")
+      ).join("\n")
+
     console.log("MESSAGE")
-    console.log(m.channel_id)
-    console.log(m.content)
+    console.log("channel:", m.channel_id)
+    console.log(text)
 
     const boss = channels[m.channel_id]
 
@@ -143,7 +151,12 @@ const connect = () => {
       return
     }
 
-    const job = getJobId(m.content || "")
+    if(!text){
+      console.log("empty text")
+      return
+    }
+
+    const job = getJobId(text)
 
     console.log("job:", job)
 
@@ -163,7 +176,7 @@ const connect = () => {
       pushed.delete(job)
     }, 30000)
 
-    const { players, sea } = parseExtra(m.content)
+    const { players, sea } = parseExtra(text)
 
     const payload = {
       id: API_ID,
@@ -173,11 +186,17 @@ const connect = () => {
       sea
     }
 
+    console.log("payload:")
     console.log(payload)
 
     try{
 
-      const r = await axios.post(API, payload)
+      const r = await axios.post(API, payload, {
+        timeout: 10000,
+        headers: {
+          "Content-Type": "application/json"
+        }
+      })
 
       console.log("PUSH OK")
       console.log(r.data)
@@ -187,10 +206,19 @@ const connect = () => {
       console.log("PUSH FAIL")
 
       if(e.response){
-        console.log(e.response.status)
-        console.log(e.response.data)
+
+        console.log("status:", e.response.status)
+
+        try{
+          console.log("data:", JSON.stringify(e.response.data))
+        }catch{
+          console.log("cannot stringify response")
+        }
+
       }else{
+
         console.log(e.message)
+
       }
 
     }
@@ -198,13 +226,19 @@ const connect = () => {
   })
 
   ws.on("close", c => {
+
     console.log("closed", c)
+
     clearInterval(hb)
+
     setTimeout(connect, 5000)
+
   })
 
   ws.on("error", e => {
+
     console.log("ws err", e.message)
+
   })
 
 }
@@ -212,7 +246,11 @@ const connect = () => {
 connect()
 
 http.createServer((req,res)=>{
+
   res.end("ok")
+
 }).listen(process.env.PORT || 3000, ()=>{
+
   console.log("HTTP READY")
+
 })

@@ -44,17 +44,9 @@ let hb
 
 const connect = () => {
 
-  console.log("connecting gateway")
-
   ws = new WebSocket(
     "wss://gateway.discord.gg/?v=10&encoding=json"
   )
-
-  ws.on("open", () => {
-
-    console.log("gateway open")
-
-  })
 
   ws.on("message", async raw => {
 
@@ -66,15 +58,11 @@ const connect = () => {
 
     }catch{
 
-      console.log("json fail")
-
       return
 
     }
 
     if(data.op === 10){
-
-      console.log("gateway hello")
 
       ws.send(JSON.stringify({
         op: 2,
@@ -104,8 +92,6 @@ const connect = () => {
             d: null
           }))
 
-          console.log("heartbeat sent")
-
         }
 
       }, data.d.heartbeat_interval)
@@ -114,16 +100,11 @@ const connect = () => {
 
     }
 
-    if(data.op === 11){
+    if(data.op === 9){
 
-      console.log("heartbeat ack")
+      console.log("invalid discord token")
 
-    }
-
-    if(data.t === "READY"){
-
-      console.log("READY")
-      console.log("logged:", data.d.user.username)
+      process.exit()
 
     }
 
@@ -141,41 +122,15 @@ const connect = () => {
         ].join("\n")
       ).join("\n")
 
-    console.log("================================")
-    console.log("MESSAGE EVENT")
-    console.log("channel:", m.channel_id)
-    console.log(text)
-    console.log("================================")
-
     const boss = channels[m.channel_id]
 
-    if(!boss){
-
-      console.log("wrong channel")
-
-      return
-
-    }
+    if(!boss) return
 
     const job = getJobId(text)
 
-    console.log("job:", job)
+    if(!job) return
 
-    if(!job){
-
-      console.log("no job found")
-
-      return
-
-    }
-
-    if(pushed.has(job)){
-
-      console.log("duplicate")
-
-      return
-
-    }
+    if(pushed.has(job)) return
 
     pushed.set(job, 1)
 
@@ -187,22 +142,17 @@ const connect = () => {
 
     const { players, sea } = parseExtra(text)
 
-    const payload = {
-      id: API_ID,
-      job,
-      boss,
-      players,
-      sea
-    }
-
-    console.log("payload:")
-    console.log(payload)
-
     try{
 
-      const r = await axios.post(
+      await axios.post(
         API,
-        payload,
+        {
+          id: API_ID,
+          job,
+          boss,
+          players,
+          sea
+        },
         {
           timeout: 10000,
           headers: {
@@ -211,46 +161,11 @@ const connect = () => {
         }
       )
 
-      console.log("PUSH OK")
-      console.log(r.data)
-
-    }catch(e){
-
-      console.log("PUSH FAIL")
-
-      if(e.response){
-
-        console.log("status:", e.response.status)
-
-        try{
-
-          console.log(
-            JSON.stringify(
-              e.response.data,
-              null,
-              2
-            )
-          )
-
-        }catch{
-
-          console.log("cannot print response")
-
-        }
-
-      }else{
-
-        console.log(e.message)
-
-      }
-
-    }
+    }catch{}
 
   })
 
-  ws.on("close", c => {
-
-    console.log("gateway close:", c)
+  ws.on("close", () => {
 
     clearInterval(hb)
 
@@ -258,12 +173,7 @@ const connect = () => {
 
   })
 
-  ws.on("error", e => {
-
-    console.log("gateway error")
-    console.log(e.message)
-
-  })
+  ws.on("error", () => {})
 
 }
 
@@ -279,10 +189,6 @@ if(!TOKEN){
 
 http.createServer((req,res)=>{
 
-  res.end("xem cái lồn web by trieu ")
+  res.end("ok")
 
-}).listen(process.env.PORT || 3000, ()=>{
-
-  console.log("HTTP READY")
-
-})
+}).listen(process.env.PORT || 3000)

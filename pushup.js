@@ -189,6 +189,6 @@ if(!TOKEN){
 
 http.createServer((req,res)=>{
 
-  res.end("ok")
+  res.end("web by trieu🥱😐")
 
 }).listen(process.env.PORT || 3000)

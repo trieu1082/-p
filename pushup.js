@@ -4,7 +4,8 @@ const http = require("http")
 
 const TOKEN = process.env.DISCORD_TOKEN
 
-const API = "https://apihop-test-9hcq.onrender.com/api/gvmi7fpuwnt"
+const API = "https://apihop-test-9hcq.onrender.com/push"
+const API_ID = "gvmi7fpuwnt"
 
 const channels = {
   "1450081431932899368": "full_moon",
@@ -60,6 +61,10 @@ const connect = () => {
       return
     }
 
+    if(data.t){
+      console.log("event:", data.t)
+    }
+
     if(data.op === 10){
 
       console.log("gateway hello")
@@ -68,7 +73,7 @@ const connect = () => {
         op: 2,
         d: {
           token: TOKEN,
-          intents: 513,
+          intents: 33281,
           properties: {
             os: "windows",
             browser: "chrome",
@@ -139,6 +144,7 @@ const connect = () => {
     const { players, sea } = parseExtra(m.content)
 
     const payload = {
+      id: API_ID,
       job,
       boss,
       players,

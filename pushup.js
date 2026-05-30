@@ -3,8 +3,7 @@ const axios = require("axios")
 
 const TOKEN = process.env.DISCORD_TOKEN
 
-const API = "https://apihop-test-9hcq.onrender.com/push"
-const API_ID = "gvmi7fpuwnt"
+const API = "https://apihop-test-9hcq.onrender.com/api/gvmi7fpuwnt"
 
 const channels = {
   "1450081431932899368": "full_moon",
@@ -112,13 +111,9 @@ const connect = () => {
 
     const { players, sea } = parseExtra(m.content)
 
-    const payload = {
-      id: API_ID,
-      job,
-      boss,
-      players,
-      sea
-    }
+    const payload = { job, boss, players, sea };
+
+await axios.post(API, payload, { timeout: 5000 });
 
     try{
 

@@ -7,7 +7,7 @@ const API = "https://api-trieu.onrender.com/push";
 const API_ID = "339184b20867";
 
 const channels = {
-  "1474034383047495800": "captain2"
+  "1474034383047495800": "captain"
 };
 
 const pushed = new Map();

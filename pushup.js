@@ -94,7 +94,6 @@ const connect = () => {
     }
 
     if (data.op === 9) {
-      console.log("Token không hợp lệ hoặc bị khoá, thoát...");
       process.exit(1);
     }
 
@@ -106,7 +105,7 @@ const connect = () => {
     ).join("\n");
 
     const boss = channels[m.channel_id];
-    if (!boss || boss !== "captain") return;
+    if (!boss) return;
 
     const job = getJobId(text);
     if (!job) return;
@@ -123,28 +122,21 @@ const connect = () => {
         timeout: 10000,
         headers: { "Content-Type": "application/json" }
       });
-      console.log(`✅ Gửi: ${job} | ${players}/12 | sea ${sea}`);
-    } catch (err) {
-      console.error(`❌ Lỗi gửi API: ${err.message}`);
-    }
+    } catch {}
   });
 
   ws.on("close", (code, reason) => {
-    console.log(`WebSocket đóng (${code}) : ${reason}`);
     clearInterval(hb);
     const newDelay = Math.floor(Math.random() * 10000) + 10000;
-    console.log(`Tự động kết nối lại sau ${Math.round(newDelay/1000)} giây...`);
     setTimeout(connect, newDelay);
   });
 
-  ws.on("error", (err) => console.error(`WebSocket error: ${err.message}`));
+  ws.on("error", (err) => {});
 };
 
 if (!TOKEN) {
-  console.log("❌ Thiếu DISCORD_TOKEN trong biến môi trường!");
   process.exit(1);
 } else {
-  console.log("🚀 Đang kết nối với Discord (dùng user token)...");
   connect();
 }
 

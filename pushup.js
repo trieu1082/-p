@@ -7,7 +7,7 @@ const API = "https://api-trieu.onrender.com/push";
 const API_ID = "339184b20867";
 
 const channels = {
-  "1474034383047495800": "captain"
+  "1474034383047495800": "captain2"
 };
 
 const pushed = new Map();
@@ -16,13 +16,13 @@ const getJobId = (text) =>
   text.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0];
 
 const parsePlayers = (text) => {
-  const match = text.match(/Players?:\s*(\d+)\/\d+/i);
-  if (match) {
-    let players = parseInt(match[1], 10);
-    return Math.min(Math.max(players, 1), 12);
-  }
-  const fallback = text.match(/(\d{1,2})\s*p/i);
-  return fallback ? Math.min(Math.max(parseInt(fallback[1], 10), 1), 12) : 1;
+  let match = text.match(/Players?:\s*(\d+)\/\d+/i);
+  if (match) return Math.min(Math.max(parseInt(match[1], 10), 1), 12);
+  match = text.match(/(\d+)\/\d+/);
+  if (match) return Math.min(Math.max(parseInt(match[1], 10), 1), 12);
+  match = text.match(/(\d{1,2})\s*p/i);
+  if (match) return Math.min(Math.max(parseInt(match[1], 10), 1), 12);
+  return 1;
 };
 
 let ws;

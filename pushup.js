@@ -1,9 +1,11 @@
 const WebSocket = require("ws");
 const axios = require("axios");
 const http = require("http");
+
 const TOKEN = process.env.DISCORD_TOKEN;
 const API = "https://api-trieu.onrender.com/push";
 const API_ID = "339184b20867";
+
 const channels = {
   "1474034383047495800": "captain"
 };
@@ -12,13 +14,13 @@ const pushed = new Map();
 
 const getJobId = (text) =>
   text.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0];
+
 const parsePlayers = (text) => {
   const match = text.match(/Players?:\s*(\d+)\/\d+/i);
   if (match) {
     let players = parseInt(match[1], 10);
     return Math.min(Math.max(players, 1), 12);
   }
-  // fallback cho định dạng cũ nếu cần
   const fallback = text.match(/(\d{1,2})\s*p/i);
   return fallback ? Math.min(Math.max(parseInt(fallback[1], 10), 1), 12) : 1;
 };
@@ -26,8 +28,22 @@ const parsePlayers = (text) => {
 let ws;
 let hb;
 
+const getUserAgent = () => {
+  const versions = ["Windows NT 10.0; Win64; x64", "Macintosh; Intel Mac OS X 10_15_7", "X11; Linux x86_64"];
+  const chromeVer = `Chrome/${Math.floor(Math.random() * 30) + 90}.0.${Math.floor(Math.random() * 2000) + 4000}.${Math.floor(Math.random() * 100)}`;
+  return `Mozilla/5.0 (${versions[Math.floor(Math.random() * versions.length)]}) AppleWebKit/537.36 (KHTML, like Gecko) ${chromeVer} Safari/537.36`;
+};
+
 const connect = () => {
-  ws = new WebSocket("wss://gateway.discord.gg/?v=10&encoding=json");
+  const headers = {
+    'User-Agent': getUserAgent(),
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Accept-Language': 'vi-VN,vi;q=0.9,fr-FR;q=0.8,fr;q=0.7,en-US;q=0.6,en;q=0.5',
+    'Cache-Control': 'no-cache',
+    'Pragma': 'no-cache'
+  };
+
+  ws = new WebSocket("wss://gateway.discord.gg/?v=10&encoding=json", { headers });
 
   ws.on("message", async (raw) => {
     let data;
@@ -38,52 +54,59 @@ const connect = () => {
     }
 
     if (data.op === 10) {
-      ws.send(
-        JSON.stringify({
-          op: 2,
-          d: {
-            token: TOKEN,
-            intents: 33281,
-            properties: {
-              os: "Windows",
-              browser: "Chrome",
-              device: "",
-            },
-            presence: {
-              status: "online",
-              since: 0,
-              activities: [],
-              afk: false,
-            },
+      ws.send(JSON.stringify({
+        op: 2,
+        d: {
+          token: TOKEN,
+          properties: {
+            os: process.platform === "win32" ? "Windows" : (process.platform === "darwin" ? "Mac OS X" : "Linux"),
+            browser: "Chrome",
+            device: "",
+            browser_user_agent: getUserAgent(),
+            browser_version: "120.0.0.0",
+            os_version: "10",
+            referrer: "",
+            referring_domain: "",
+            referrer_current: "",
+            referring_domain_current: "",
+            release_channel: "stable",
+            client_build_number: 254479,
+            client_event_source: null
           },
-        })
-      );
+          compress: false,
+          large_threshold: 250,
+          intents: 33281,
+          presence: {
+            status: "invisible",
+            since: 0,
+            activities: [],
+            afk: true
+          }
+        }
+      }));
 
       hb = setInterval(() => {
         if (ws.readyState === 1) {
-          ws.send(JSON.stringify({ op: 1, d: null }));
+          ws.send(JSON.stringify({ op: 1, d: Date.now() }));
         }
       }, data.d.heartbeat_interval);
       return;
     }
 
     if (data.op === 9) {
-      console.log("Invalid Discord token");
-      process.exit();
+      console.log("Token không hợp lệ hoặc bị khoá, thoát...");
+      process.exit(1);
     }
 
     if (data.t !== "MESSAGE_CREATE") return;
 
     const m = data.d;
-    const text =
-      m.content ||
-      (m.embeds || []).map((e) =>
-        [e.title || "", e.description || "", ...(e.fields || []).map((f) => f.value || "")].join("\n")
-      ).join("\n");
+    const text = m.content || (m.embeds || []).map(e =>
+      [e.title || "", e.description || "", ...(e.fields || []).map(f => f.value || "")].join("\n")
+    ).join("\n");
 
     const boss = channels[m.channel_id];
-    if (!boss) return;               // chỉ xử lý nếu đúng kênh captain
-    if (boss !== "captain") return;  // an toàn: chỉ lấy captain
+    if (!boss || boss !== "captain") return;
 
     const job = getJobId(text);
     if (!job) return;
@@ -93,40 +116,35 @@ const connect = () => {
     setTimeout(() => pushed.delete(job), 30000);
 
     const players = parsePlayers(text);
-    const sea = 2;   // Cursed Captain chỉ ở Sea 2
+    const sea = 2;
 
     try {
-      await axios.post(
-        API,
-        {
-          id: API_ID,
-          job,
-          boss,
-          players,
-          sea,
-        },
-        {
-          timeout: 10000,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-      console.log(`✅ Đã gửi: ${job} | players=${players} | sea=${sea}`);
+      await axios.post(API, { id: API_ID, job, boss, players, sea }, {
+        timeout: 10000,
+        headers: { "Content-Type": "application/json" }
+      });
+      console.log(`✅ Gửi: ${job} | ${players}/12 | sea ${sea}`);
     } catch (err) {
-      console.error("❌ Lỗi gửi API:", err.message);
+      console.error(`❌ Lỗi gửi API: ${err.message}`);
     }
   });
 
-  ws.on("close", () => {
+  ws.on("close", (code, reason) => {
+    console.log(`WebSocket đóng (${code}) : ${reason}`);
     clearInterval(hb);
-    setTimeout(connect, 5000);
+    const newDelay = Math.floor(Math.random() * 10000) + 10000;
+    console.log(`Tự động kết nối lại sau ${Math.round(newDelay/1000)} giây...`);
+    setTimeout(connect, newDelay);
   });
 
-  ws.on("error", (err) => console.error("WebSocket error:", err.message));
+  ws.on("error", (err) => console.error(`WebSocket error: ${err.message}`));
 };
 
 if (!TOKEN) {
-  console.log("Thiếu DISCORD_TOKEN trong environment variables");
+  console.log("❌ Thiếu DISCORD_TOKEN trong biến môi trường!");
+  process.exit(1);
 } else {
+  console.log("🚀 Đang kết nối với Discord (dùng user token)...");
   connect();
 }
 

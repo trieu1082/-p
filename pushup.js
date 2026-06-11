@@ -28,15 +28,38 @@ const parsePlayers = (text) => {
 };
 
 const parseSwordName = (text) => {
+  // Debug: in ra 500 ký tự đầu của text để xem cấu trúc
+  console.log(`[DEBUG] parseSwordName text preview: ${text.substring(0, 500)}`);
+  
+  // Cách 1: Tìm regex không phụ thuộc xuống dòng
+  let regex = /Swords?\s*Name:\s*([^\n]+)/i;
+  let match = text.match(regex);
+  if (match && match[1].trim()) {
+    return match[1].trim();
+  }
+  
+  // Cách 2: Duyệt từng dòng, vì có thể tên sword ở dòng riêng
   const lines = text.split('\n');
   for (let i = 0; i < lines.length; i++) {
-    if (/Swords?\s*Name:/i.test(lines[i])) {
-      let match = lines[i].match(/Swords?\s*Name:\s*(.+)/i);
-      if (match && match[1].trim()) return match[1].trim();
-      if (i + 1 < lines.length && lines[i + 1].trim()) {
-        return lines[i + 1].trim();
+    const line = lines[i];
+    if (/Swords?\s*Name:/i.test(line)) {
+      // Có thể có tên ngay sau dấu hai chấm trên cùng dòng
+      let inlineMatch = line.match(/Swords?\s*Name:\s*(.+)/i);
+      if (inlineMatch && inlineMatch[1].trim()) {
+        return inlineMatch[1].trim();
+      }
+      // Nếu không, lấy dòng tiếp theo (bỏ qua dòng trống)
+      let nextLine = lines[i + 1];
+      if (nextLine && nextLine.trim()) {
+        return nextLine.trim();
       }
     }
+  }
+  // Cách 3: Tìm bất kỳ dòng nào có dạng "Shizu" nhưng phải gần "Swords Name"
+  // (fallback)
+  const nameCandidate = text.match(/(?:Swords?\s*Name:)[^\n]*\n\s*([A-Za-z]+)/i);
+  if (nameCandidate && nameCandidate[1]) {
+    return nameCandidate[1];
   }
   return null;
 };
@@ -44,11 +67,87 @@ const parseSwordName = (text) => {
 let ws;
 let hb;
 let reconnectTimer = null;
+let processingQueue = false;
+let messageQueue = [];
 
 const getUserAgent = () => {
   const versions = ["Windows NT 10.0; Win64; x64", "Macintosh; Intel Mac OS X 10_15_7", "X11; Linux x86_64"];
   const chromeVer = `Chrome/${Math.floor(Math.random() * 30) + 90}.0.${Math.floor(Math.random() * 2000) + 4000}.${Math.floor(Math.random() * 100)}`;
   return `Mozilla/5.0 (${versions[Math.floor(Math.random() * versions.length)]}) AppleWebKit/537.36 (KHTML, like Gecko) ${chromeVer} Safari/537.36`;
+};
+
+const processMessage = async (m) => {
+  const text = m.content || (m.embeds || []).map(e =>
+    [e.title || "", e.description || "", ...(e.fields || []).map(f => f.value || "")].join("\n")
+  ).join("\n");
+
+  const bossType = channels[m.channel_id];
+  if (!bossType) return;
+
+  console.log(`[${new Date().toISOString()}] 📨 Nhận tin từ kênh ${bossType} (${m.channel_id})`);
+
+  const job = getJobId(text);
+  if (!job) {
+    console.log(`[${new Date().toISOString()}] ⚠️ Không tìm thấy Job ID`);
+    return;
+  }
+
+  if (pushed.has(job)) {
+    console.log(`[${new Date().toISOString()}] ⏭️ Job ${job} đã được push gần đây, bỏ qua`);
+    return;
+  }
+
+  pushed.set(job, 1);
+  setTimeout(() => pushed.delete(job), 30000);
+
+  const players = parsePlayers(text);
+  const sea = 2;
+
+  let boss = bossType;
+  if (bossType === "sword") {
+    const swordName = parseSwordName(text);
+    if (!swordName) {
+      console.log(`[${new Date().toISOString()}] ⚠️ Không parse được tên sword, bỏ qua`);
+      // In toàn bộ text để debug nếu cần
+      console.log(`[DEBUG] Full text:\n${text}`);
+      return;
+    }
+    boss = swordName;
+  }
+
+  // Thêm delay ngẫu nhiên để tránh rate limit (1-3 giây)
+  const delay = Math.floor(Math.random() * 2000) + 1000;
+  console.log(`[${new Date().toISOString()}] ⏳ Chờ ${delay}ms trước khi gửi API...`);
+  await new Promise(resolve => setTimeout(resolve, delay));
+
+  try {
+    await axios.post(API, { id: API_ID, apiKey: API_KEY, job, boss, players, sea }, {
+      timeout: 10000,
+      headers: { "Content-Type": "application/json" }
+    });
+    console.log(`[${new Date().toISOString()}] ✅ Đã push: ${job} | boss: ${boss} | players: ${players}/12 | sea: ${sea}`);
+  } catch (err) {
+    if (err.response && err.response.status === 429) {
+      console.error(`[${new Date().toISOString()}] ⚠️ Rate limit (429), sẽ thử lại sau 5s`);
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      // Có thể retry ở đây, nhưng đơn giản là bỏ qua
+    } else {
+      console.error(`[${new Date().toISOString()}] ❌ Lỗi push API: ${err.message}`);
+    }
+  }
+};
+
+// Xử lý hàng đợi tin nhắn để tránh overload
+const queueProcessor = async () => {
+  if (processingQueue) return;
+  processingQueue = true;
+  while (messageQueue.length > 0) {
+    const m = messageQueue.shift();
+    await processMessage(m);
+    // Nghỉ giữa các tin nhắn để tránh rate limit
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  }
+  processingQueue = false;
 };
 
 const connect = () => {
@@ -72,7 +171,7 @@ const connect = () => {
       return;
     }
 
-    if (data.op === 10) { // Hello event
+    if (data.op === 10) {
       ws.send(JSON.stringify({
         op: 2,
         d: {
@@ -105,6 +204,7 @@ const connect = () => {
       }));
       console.log(`[${new Date().toISOString()}] ✅ Đã gửi identify, chờ ready...`);
 
+      if (hb) clearInterval(hb);
       hb = setInterval(() => {
         if (ws.readyState === 1) {
           ws.send(JSON.stringify({ op: 1, d: Date.now() }));
@@ -113,7 +213,7 @@ const connect = () => {
       return;
     }
 
-    if (data.op === 9) { // Invalid session, cần reconnect
+    if (data.op === 9) {
       console.log(`[${new Date().toISOString()}] ⚠️ Opcode 9: Invalid session, sẽ reconnect sau 5s`);
       clearInterval(hb);
       ws.terminate();
@@ -128,58 +228,16 @@ const connect = () => {
     if (data.t !== "MESSAGE_CREATE") return;
 
     const m = data.d;
-    const text = m.content || (m.embeds || []).map(e =>
-      [e.title || "", e.description || "", ...(e.fields || []).map(f => f.value || "")].join("\n")
-    ).join("\n");
-
-    const bossType = channels[m.channel_id];
-    if (!bossType) return;
-
-    console.log(`[${new Date().toISOString()}] 📨 Nhận tin từ kênh ${bossType} (${m.channel_id})`);
-
-    const job = getJobId(text);
-    if (!job) {
-      console.log(`[${new Date().toISOString()}] ⚠️ Không tìm thấy Job ID`);
-      return;
-    }
-
-    if (pushed.has(job)) {
-      console.log(`[${new Date().toISOString()}] ⏭️ Job ${job} đã được push gần đây, bỏ qua`);
-      return;
-    }
-
-    pushed.set(job, 1);
-    setTimeout(() => pushed.delete(job), 30000);
-
-    const players = parsePlayers(text);
-    const sea = 2;
-
-    let boss = bossType;
-    if (bossType === "sword") {
-      const swordName = parseSwordName(text);
-      if (!swordName) {
-        console.log(`[${new Date().toISOString()}] ⚠️ Không parse được tên sword, bỏ qua`);
-        return;
-      }
-      boss = swordName;
-    }
-
-    try {
-      await axios.post(API, { id: API_ID, apiKey: API_KEY, job, boss, players, sea }, {
-        timeout: 10000,
-        headers: { "Content-Type": "application/json" }
-      });
-      console.log(`[${new Date().toISOString()}] ✅ Đã push: ${job} | boss: ${boss} | players: ${players}/12 | sea: ${sea}`);
-    } catch (err) {
-      console.error(`[${new Date().toISOString()}] ❌ Lỗi push API: ${err.message}`);
-    }
+    // Thêm vào hàng đợi để xử lý tuần tự, tránh rate limit
+    messageQueue.push(m);
+    queueProcessor();
   });
 
   ws.on("close", (code, reason) => {
     console.log(`[${new Date().toISOString()}] 🔴 WebSocket đóng (code: ${code}, reason: ${reason})`);
     clearInterval(hb);
     if (reconnectTimer) clearTimeout(reconnectTimer);
-    const delay = Math.floor(Math.random() * 8000) + 8000; // 8-16 giây
+    const delay = Math.floor(Math.random() * 8000) + 8000;
     console.log(`[${new Date().toISOString()}] 🔄 Sẽ thử kết nối lại sau ${delay/1000} giây...`);
     reconnectTimer = setTimeout(connect, delay);
   });

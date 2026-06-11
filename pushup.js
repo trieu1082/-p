@@ -43,6 +43,7 @@ const parseSwordName = (text) => {
 
 let ws;
 let hb;
+let reconnectTimer = null;
 
 const getUserAgent = () => {
   const versions = ["Windows NT 10.0; Win64; x64", "Macintosh; Intel Mac OS X 10_15_7", "X11; Linux x86_64"];
@@ -51,6 +52,7 @@ const getUserAgent = () => {
 };
 
 const connect = () => {
+  if (reconnectTimer) clearTimeout(reconnectTimer);
   const headers = {
     'User-Agent': getUserAgent(),
     'Accept-Encoding': 'gzip, deflate, br',
@@ -60,6 +62,7 @@ const connect = () => {
   };
 
   ws = new WebSocket("wss://gateway.discord.gg/?v=10&encoding=json", { headers });
+  console.log(`[${new Date().toISOString()}] 🔌 Đang kết nối WebSocket...`);
 
   ws.on("message", async (raw) => {
     let data;
@@ -69,7 +72,7 @@ const connect = () => {
       return;
     }
 
-    if (data.op === 10) {
+    if (data.op === 10) { // Hello event
       ws.send(JSON.stringify({
         op: 2,
         d: {
@@ -100,6 +103,7 @@ const connect = () => {
           }
         }
       }));
+      console.log(`[${new Date().toISOString()}] ✅ Đã gửi identify, chờ ready...`);
 
       hb = setInterval(() => {
         if (ws.readyState === 1) {
@@ -109,10 +113,16 @@ const connect = () => {
       return;
     }
 
-    if (data.op === 9) {
+    if (data.op === 9) { // Invalid session, cần reconnect
+      console.log(`[${new Date().toISOString()}] ⚠️ Opcode 9: Invalid session, sẽ reconnect sau 5s`);
       clearInterval(hb);
-      setTimeout(connect, 5000);
+      ws.terminate();
+      reconnectTimer = setTimeout(connect, 5000);
       return;
+    }
+
+    if (data.t === "READY") {
+      console.log(`[${new Date().toISOString()}] 🎉 Bot đã sẵn sàng, lắng nghe tin nhắn.`);
     }
 
     if (data.t !== "MESSAGE_CREATE") return;
@@ -125,10 +135,19 @@ const connect = () => {
     const bossType = channels[m.channel_id];
     if (!bossType) return;
 
-    const job = getJobId(text);
-    if (!job) return;
+    console.log(`[${new Date().toISOString()}] 📨 Nhận tin từ kênh ${bossType} (${m.channel_id})`);
 
-    if (pushed.has(job)) return;
+    const job = getJobId(text);
+    if (!job) {
+      console.log(`[${new Date().toISOString()}] ⚠️ Không tìm thấy Job ID`);
+      return;
+    }
+
+    if (pushed.has(job)) {
+      console.log(`[${new Date().toISOString()}] ⏭️ Job ${job} đã được push gần đây, bỏ qua`);
+      return;
+    }
+
     pushed.set(job, 1);
     setTimeout(() => pushed.delete(job), 30000);
 
@@ -138,7 +157,10 @@ const connect = () => {
     let boss = bossType;
     if (bossType === "sword") {
       const swordName = parseSwordName(text);
-      if (!swordName) return;
+      if (!swordName) {
+        console.log(`[${new Date().toISOString()}] ⚠️ Không parse được tên sword, bỏ qua`);
+        return;
+      }
       boss = swordName;
     }
 
@@ -147,25 +169,31 @@ const connect = () => {
         timeout: 10000,
         headers: { "Content-Type": "application/json" }
       });
-      console.log(`✅ Đã push: ${job} | boss: ${boss} | players: ${players}/12 | sea: ${sea}`);
+      console.log(`[${new Date().toISOString()}] ✅ Đã push: ${job} | boss: ${boss} | players: ${players}/12 | sea: ${sea}`);
     } catch (err) {
-      console.error(`❌ Lỗi push API: ${err.message}`);
+      console.error(`[${new Date().toISOString()}] ❌ Lỗi push API: ${err.message}`);
     }
   });
 
-  ws.on("close", () => {
+  ws.on("close", (code, reason) => {
+    console.log(`[${new Date().toISOString()}] 🔴 WebSocket đóng (code: ${code}, reason: ${reason})`);
     clearInterval(hb);
-    setTimeout(connect, Math.floor(Math.random() * 10000) + 10000);
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    const delay = Math.floor(Math.random() * 8000) + 8000; // 8-16 giây
+    console.log(`[${new Date().toISOString()}] 🔄 Sẽ thử kết nối lại sau ${delay/1000} giây...`);
+    reconnectTimer = setTimeout(connect, delay);
   });
 
-  ws.on("error", () => {});
+  ws.on("error", (err) => {
+    console.error(`[${new Date().toISOString()}] ❌ WebSocket error: ${err.message}`);
+  });
 };
 
 if (!TOKEN || !API_KEY) {
   console.error("❌ Thiếu DISCORD_TOKEN hoặc API_KEY trong biến môi trường!");
   process.exit(1);
 } else {
-  console.log("🚀 Bot đã khởi động, đang lắng nghe sự kiện...");
+  console.log("🚀 Bot khởi động, đang kết nối Discord...");
   connect();
 }
 

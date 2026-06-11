@@ -11,7 +11,9 @@ const channels = {
   "1474034383047495800": "captain",
   "1485223680853147779": "sword"
 };
+
 const pushed = new Map();
+
 const getJobId = (text) =>
   text.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0];
 
@@ -26,8 +28,17 @@ const parsePlayers = (text) => {
 };
 
 const parseSwordName = (text) => {
-  const match = text.match(/Swords?\s*Name:\s*([^\n]+)/i);
-  return match ? match[1].trim() : null;
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    if (/Swords?\s*Name:/i.test(lines[i])) {
+      let match = lines[i].match(/Swords?\s*Name:\s*(.+)/i);
+      if (match && match[1].trim()) return match[1].trim();
+      if (i + 1 < lines.length && lines[i + 1].trim()) {
+        return lines[i + 1].trim();
+      }
+    }
+  }
+  return null;
 };
 
 let ws;
@@ -127,7 +138,7 @@ const connect = () => {
     let boss = bossType;
     if (bossType === "sword") {
       const swordName = parseSwordName(text);
-      if (!swordName) return; // Nếu không tìm thấy tên sword, bỏ qua
+      if (!swordName) return;
       boss = swordName;
     }
 
@@ -136,7 +147,10 @@ const connect = () => {
         timeout: 10000,
         headers: { "Content-Type": "application/json" }
       });
-    } catch {}
+      console.log(`✅ Đã push: ${job} | boss: ${boss} | players: ${players}/12 | sea: ${sea}`);
+    } catch (err) {
+      console.error(`❌ Lỗi push API: ${err.message}`);
+    }
   });
 
   ws.on("close", () => {
@@ -148,8 +162,10 @@ const connect = () => {
 };
 
 if (!TOKEN || !API_KEY) {
+  console.error("❌ Thiếu DISCORD_TOKEN hoặc API_KEY trong biến môi trường!");
   process.exit(1);
 } else {
+  console.log("🚀 Bot đã khởi động, đang lắng nghe sự kiện...");
   connect();
 }
 

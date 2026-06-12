@@ -5,7 +5,7 @@ const http = require("http");
 const TOKEN = process.env.DISCORD_TOKEN;
 const API_KEY = process.env.API_KEY;
 const API = "https://api-trieu.onrender.com/push";
-const API_ID = "a2553af40887";
+const API_ID = "41e5499a87bb";
 
 const channels = {
   "1474034383047495800": "captain",
@@ -27,40 +27,36 @@ const parsePlayers = (text) => {
   return 1;
 };
 
+const clean = (s) => s.replace(/[`*_~]/g, "").trim();
+
 const parseSwordName = (text) => {
-  // Debug: in ra 500 ký tự đầu của text để xem cấu trúc
-  console.log(`[DEBUG] parseSwordName text preview: ${text.substring(0, 500)}`);
-  
-  // Cách 1: Tìm regex không phụ thuộc xuống dòng
-  let regex = /Swords?\s*Name:\s*([^\n]+)/i;
+  let regex = /Swords?\s*Name\s*:\s*([^\n]+)/i;
   let match = text.match(regex);
-  if (match && match[1].trim()) {
-    return match[1].trim();
+  if (match) {
+    const v = clean(match[1]);
+    if (v) return v;
   }
-  
-  // Cách 2: Duyệt từng dòng, vì có thể tên sword ở dòng riêng
+
   const lines = text.split('\n');
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if (/Swords?\s*Name:/i.test(line)) {
-      // Có thể có tên ngay sau dấu hai chấm trên cùng dòng
-      let inlineMatch = line.match(/Swords?\s*Name:\s*(.+)/i);
-      if (inlineMatch && inlineMatch[1].trim()) {
-        return inlineMatch[1].trim();
+    if (/Swords?\s*Name\s*:/i.test(line)) {
+      let inlineMatch = line.match(/Swords?\s*Name\s*:\s*(.+)/i);
+      if (inlineMatch) {
+        const v = clean(inlineMatch[1]);
+        if (v) return v;
       }
-      // Nếu không, lấy dòng tiếp theo (bỏ qua dòng trống)
       let nextLine = lines[i + 1];
-      if (nextLine && nextLine.trim()) {
-        return nextLine.trim();
+      if (nextLine) {
+        const v = clean(nextLine);
+        if (v) return v;
       }
     }
   }
-  // Cách 3: Tìm bất kỳ dòng nào có dạng "Shizu" nhưng phải gần "Swords Name"
-  // (fallback)
-  const nameCandidate = text.match(/(?:Swords?\s*Name:)[^\n]*\n\s*([A-Za-z]+)/i);
-  if (nameCandidate && nameCandidate[1]) {
-    return nameCandidate[1];
-  }
+
+  const nameCandidate = text.match(/(?:Swords?\s*Name\s*:)[^\n]*\n\s*([A-Za-z]+)/i);
+  if (nameCandidate && nameCandidate[1]) return clean(nameCandidate[1]);
+
   return null;
 };
 
@@ -84,18 +80,10 @@ const processMessage = async (m) => {
   const bossType = channels[m.channel_id];
   if (!bossType) return;
 
-  console.log(`[${new Date().toISOString()}] 📨 Nhận tin từ kênh ${bossType} (${m.channel_id})`);
-
   const job = getJobId(text);
-  if (!job) {
-    console.log(`[${new Date().toISOString()}] ⚠️ Không tìm thấy Job ID`);
-    return;
-  }
+  if (!job) return;
 
-  if (pushed.has(job)) {
-    console.log(`[${new Date().toISOString()}] ⏭️ Job ${job} đã được push gần đây, bỏ qua`);
-    return;
-  }
+  if (pushed.has(job)) return;
 
   pushed.set(job, 1);
   setTimeout(() => pushed.delete(job), 30000);
@@ -106,18 +94,11 @@ const processMessage = async (m) => {
   let boss = bossType;
   if (bossType === "sword") {
     const swordName = parseSwordName(text);
-    if (!swordName) {
-      console.log(`[${new Date().toISOString()}] ⚠️ Không parse được tên sword, bỏ qua`);
-      // In toàn bộ text để debug nếu cần
-      console.log(`[DEBUG] Full text:\n${text}`);
-      return;
-    }
+    if (!swordName) return;
     boss = swordName;
   }
 
-  // Thêm delay ngẫu nhiên để tránh rate limit (1-3 giây)
   const delay = Math.floor(Math.random() * 2000) + 1000;
-  console.log(`[${new Date().toISOString()}] ⏳ Chờ ${delay}ms trước khi gửi API...`);
   await new Promise(resolve => setTimeout(resolve, delay));
 
   try {
@@ -125,26 +106,19 @@ const processMessage = async (m) => {
       timeout: 10000,
       headers: { "Content-Type": "application/json" }
     });
-    console.log(`[${new Date().toISOString()}] ✅ Đã push: ${job} | boss: ${boss} | players: ${players}/12 | sea: ${sea}`);
   } catch (err) {
     if (err.response && err.response.status === 429) {
-      console.error(`[${new Date().toISOString()}] ⚠️ Rate limit (429), sẽ thử lại sau 5s`);
       await new Promise(resolve => setTimeout(resolve, 5000));
-      // Có thể retry ở đây, nhưng đơn giản là bỏ qua
-    } else {
-      console.error(`[${new Date().toISOString()}] ❌ Lỗi push API: ${err.message}`);
     }
   }
 };
 
-// Xử lý hàng đợi tin nhắn để tránh overload
 const queueProcessor = async () => {
   if (processingQueue) return;
   processingQueue = true;
   while (messageQueue.length > 0) {
     const m = messageQueue.shift();
     await processMessage(m);
-    // Nghỉ giữa các tin nhắn để tránh rate limit
     await new Promise(resolve => setTimeout(resolve, 2000));
   }
   processingQueue = false;
@@ -161,7 +135,6 @@ const connect = () => {
   };
 
   ws = new WebSocket("wss://gateway.discord.gg/?v=10&encoding=json", { headers });
-  console.log(`[${new Date().toISOString()}] 🔌 Đang kết nối WebSocket...`);
 
   ws.on("message", async (raw) => {
     let data;
@@ -202,7 +175,6 @@ const connect = () => {
           }
         }
       }));
-      console.log(`[${new Date().toISOString()}] ✅ Đã gửi identify, chờ ready...`);
 
       if (hb) clearInterval(hb);
       hb = setInterval(() => {
@@ -214,44 +186,32 @@ const connect = () => {
     }
 
     if (data.op === 9) {
-      console.log(`[${new Date().toISOString()}] ⚠️ Opcode 9: Invalid session, sẽ reconnect sau 5s`);
       clearInterval(hb);
       ws.terminate();
       reconnectTimer = setTimeout(connect, 5000);
       return;
     }
 
-    if (data.t === "READY") {
-      console.log(`[${new Date().toISOString()}] 🎉 Bot đã sẵn sàng, lắng nghe tin nhắn.`);
-    }
-
     if (data.t !== "MESSAGE_CREATE") return;
 
     const m = data.d;
-    // Thêm vào hàng đợi để xử lý tuần tự, tránh rate limit
     messageQueue.push(m);
     queueProcessor();
   });
 
-  ws.on("close", (code, reason) => {
-    console.log(`[${new Date().toISOString()}] 🔴 WebSocket đóng (code: ${code}, reason: ${reason})`);
+  ws.on("close", () => {
     clearInterval(hb);
     if (reconnectTimer) clearTimeout(reconnectTimer);
     const delay = Math.floor(Math.random() * 8000) + 8000;
-    console.log(`[${new Date().toISOString()}] 🔄 Sẽ thử kết nối lại sau ${delay/1000} giây...`);
     reconnectTimer = setTimeout(connect, delay);
   });
 
-  ws.on("error", (err) => {
-    console.error(`[${new Date().toISOString()}] ❌ WebSocket error: ${err.message}`);
-  });
+  ws.on("error", () => {});
 };
 
 if (!TOKEN || !API_KEY) {
-  console.error("❌ Thiếu DISCORD_TOKEN hoặc API_KEY trong biến môi trường!");
   process.exit(1);
 } else {
-  console.log("🚀 Bot khởi động, đang kết nối Discord...");
   connect();
 }
 

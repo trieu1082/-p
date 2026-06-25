@@ -6,12 +6,10 @@ const TARGET_API = "https://api-jgmm.onrender.com/api/32dc04e1d415/all";
 const TARGET_KEY = "4f813555929b27f77743adab8ff37a442dd702540016467495b948f46c0bf191";
 const TARGET_ID = "32dc04e1d415";
 
-// Hàm tạo IP ngẫu nhiên
 const randomIP = () => {
     return Array.from({ length: 4 }, () => Math.floor(Math.random() * 256)).join('.');
 };
 
-// Hàm tạo User-Agent ngẫu nhiên
 const randomUserAgent = () => {
     const uas = [
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -39,8 +37,9 @@ const fetchAndPushJobs = async () => {
         for (const item of data.JobId) {
             const jobId = item.JobId;
             let players = 1;
-            if (item.Players) {
-                const match = item.Players.match(/(\d+)\/\d+/);
+            if (item.Players !== undefined && item.Players !== null) {
+                const playersStr = String(item.Players);
+                const match = playersStr.match(/(\d+)\/\d+/);
                 if (match) {
                     players = Math.min(Math.max(parseInt(match[1], 10), 1), 12);
                 }
@@ -83,13 +82,10 @@ const fetchAndPushJobs = async () => {
     }
 };
 
-// Chạy lần đầu khi khởi động
 fetchAndPushJobs();
 
-// Lặp lại mỗi 5 phút (300.000 ms)
 setInterval(fetchAndPushJobs, 300000);
 
-// Web server để giữ ứng dụng hoạt động (Render yêu cầu)
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('ok');

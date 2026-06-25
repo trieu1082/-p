@@ -1,13 +1,10 @@
 const axios = require("axios");
 const http = require("http");
 
-const API_KEY = process.env.API_KEY;
 const SOURCE_API = "https://api-njgn.onrender.com/api/decode/pmt/s/cursedcaptain";
-const TARGET_API = "https://api-jgmm.onrender.com/push";
+const TARGET_API = "https://api-jgmm.onrender.com/api/32dc04e1d415/all";
 const TARGET_KEY = "4f813555929b27f77743adab8ff37a442dd702540016467495b948f46c0bf191";
 const TARGET_ID = "32dc04e1d415";
-
-const pushed = new Map();
 
 const fetchAndPushJobs = async () => {
     try {
@@ -20,13 +17,6 @@ const fetchAndPushJobs = async () => {
 
         for (const item of data.JobId) {
             const jobId = item.JobId;
-            if (pushed.has(jobId)) {
-                continue;
-            }
-
-            pushed.set(jobId, 1);
-            setTimeout(() => pushed.delete(jobId), 30000);
-
             let players = 1;
             if (item.Players) {
                 const match = item.Players.match(/(\d+)\/\d+/);
@@ -54,16 +44,13 @@ const fetchAndPushJobs = async () => {
                     await new Promise(resolve => setTimeout(resolve, 5000));
                 }
             }
-
-            await new Promise(resolve => setTimeout(resolve, 2000));
         }
     } catch (error) {
+        console.error("Lỗi:", error.message);
     }
 };
 
 fetchAndPushJobs();
-
-setInterval(fetchAndPushJobs, 300000);
 
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });

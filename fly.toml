@@ -1,4 +1,5 @@
-app = "api-push"
+
+app = "api-push-abc"   # đổi tên nếu cần
 
 [build]
   [build.args]

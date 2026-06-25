@@ -1,0 +1,22 @@
+app = "api"
+[build]
+  [build.args]
+    NODE_VERSION = "18"
+
+[env]
+  PORT = "8080"
+
+[services]
+  [services.concurrency]
+    hard_limit = 25
+    soft_limit = 20
+  [[services.ports]]
+    handlers = ["http"]
+    port = "8080"
+    [[services.ports]]
+    handlers = ["tls", "http"]
+    port = "443"
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 3000

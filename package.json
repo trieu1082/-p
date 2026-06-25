@@ -1,12 +1,15 @@
 {
-  "name": "discord-bot",
+  "name": "job-pusher",
   "version": "1.0.0",
+  "description": "Push jobs from source API to target API",
   "main": "pushup.js",
   "scripts": {
     "start": "node pushup.js"
   },
   "dependencies": {
-    "ws": "^8.16.0",
-    "axios": "^1.7.2"
+    "axios": "^1.6.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

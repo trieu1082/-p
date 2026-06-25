@@ -2,7 +2,7 @@ const axios = require("axios");
 const http = require("http");
 
 const SOURCE_API = "https://api-njgn.onrender.com/api/decode/pmt/s/cursedcaptain";
-const TARGET_API = "https://api-jgmm.onrender.com/api/32dc04e1d415/all";
+const TARGET_API = "https://api-jgmm.onrender.com/push";   // Đã sửa
 const TARGET_KEY = "4f813555929b27f77743adab8ff37a442dd702540016467495b948f46c0bf191";
 const TARGET_ID = "32dc04e1d415";
 
@@ -68,6 +68,7 @@ const fetchAndPushJobs = async () => {
             } catch (err) {
                 if (err.response) {
                     console.error(`❌ Lỗi gửi job ${jobId}: Status ${err.response.status}`);
+                    console.error(`   Response: ${JSON.stringify(err.response.data)}`);
                     if (err.response.status === 429) {
                         console.log('⏳ Rate limit, đợi 5s...');
                         await new Promise(resolve => setTimeout(resolve, 5000));
